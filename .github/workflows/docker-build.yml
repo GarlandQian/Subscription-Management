@@ -1,3 +1,5 @@
+# .github/workflows/docker-publish.yml
+
 # 工作流名称
 name: Build and Push Multi-Arch Image to GHCR
 
@@ -5,71 +7,54 @@ name: Build and Push Multi-Arch Image to GHCR
 on:
   push:
     branches:
-      # 注意：请确保这里的 'main' 是您仓库的默认分支名，有些旧仓库可能使用 'master'
       - main
   # 允许您在 Actions 页面手动触发此工作流
   workflow_dispatch:
 
 jobs:
   build-and-push:
-    # 运行此 Job 的虚拟机环境
     runs-on: ubuntu-latest
-    # 关键：授予工作流向 GHCR 写入的权限
     permissions:
       contents: read
       packages: write
 
     steps:
-      # 1. 检出您的代码
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 设置 QEMU，这是构建多架构镜像所必需的
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 3. 设置 Docker Buildx，这是 Docker 的一个构建工具
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # 4. 登录到 GitHub Container Registry (GHCR)
-      # 这是主要的修改点
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          # github.actor 指的是触发此工作流的用户
           username: ${{ github.actor }}
-          # GITHUB_TOKEN 是由 GitHub Actions 自动生成的、用于认证的临时令牌
           password: ${{ secrets.GITHUB_TOKEN }}
 
-       # --- 新增的步驟：轉換變數為小寫 ---
-      - name: Set lowercase owner name
-        id: set_vars
+      # --- 修正點 1：步驟和變數名稱更清晰 ---
+      - name: Set lowercase repository name
         run: |
-          # Bash 4+ 內建的語法 ${string,,} 可以將字串轉為全小寫
-          LOWERCASE_NAME=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          # 將結果寫入 GITHUB_ENV 環境檔案，格式為 KEY=VALUE
-          echo "LOWERCASE_NAME=${LOWERCASE_NAME}" >> $GITHUB_ENV
+          # github.repository 的格式是 'owner/repo-name'
+          LOWERCASE_REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "LOWERCASE_REPO=${LOWERCASE_REPO}" >> $GITHUB_ENV
 
-      # 5. 提取 Docker 镜像的元数据（如标签和注释）
-      # 这是一个最佳实践，可以自动生成更智能的标签
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          # 将镜像名称与您的仓库关联
-          images: ghcr.io/${{ github.env.LOWERCASE_NAME }}
+          # --- 修正點 2：使用正確的 env 上下文 ---
+          # 移除了錯誤的 'github.' 前綴
+          images: ghcr.io/${{ env.LOWERCASE_REPO }}
 
-      # 6. 构建并推送多架构 Docker 镜像
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          # 推送镜像到仓库
           push: true
-          # 构建您指定的平台架构
           platforms: linux/amd64,linux/arm64
-          # 使用元数据步骤生成的标签
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
